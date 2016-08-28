@@ -23,3 +23,4 @@ Usage:
         go run tpchtest.go -maxProcs 4
 
 Note that the code limits the number of goroutines to the number of CPU cores you have on your machine.
+

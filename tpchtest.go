@@ -42,12 +42,12 @@ CREATE TABLE LINEITEM ( L_ORDERKEY    INTEGER NOT NULL,
 
 */
 type MyString struct {
-	Len  int64
+	Len  int16
 	Data []byte
 }
 
 func (ms *MyString) SetLen(b []byte) {
-	ms.Len = *(*int64)(unsafe.Pointer(&b[0]))
+	ms.Len = *(*int16)(unsafe.Pointer(&b[0]))
 }
 func (ms *MyString) SetData(b []byte) {
 	ms.Data = b
@@ -260,21 +260,21 @@ func readLineItemData(inputFile *os.File, skipCount int) (li []*LineItemRow, liv
 		liv := &lineitem1GBVariable[rowNum]
 
 		liv.l_shipinstruct.SetLen(inputBuffer[cursor:])
-		cursor += 8
+		cursor += 2
 
 		strlen := int(liv.l_shipinstruct.Len)
 		liv.l_shipinstruct.SetData(inputBuffer[cursor : cursor+strlen])
 		cursor += strlen
 
 		liv.l_shipmode.SetLen(inputBuffer[cursor:])
-		cursor += 8
+		cursor += 2
 
 		strlen = int(liv.l_shipmode.Len)
 		liv.l_shipmode.SetData(inputBuffer[cursor : cursor+strlen])
 		cursor += strlen
 
 		liv.l_comment.SetLen(inputBuffer[cursor:])
-		cursor += 8
+		cursor += 2
 
 		strlen = int(liv.l_comment.Len)
 		liv.l_comment.SetData(inputBuffer[cursor : cursor+strlen])

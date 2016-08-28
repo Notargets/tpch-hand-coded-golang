@@ -182,8 +182,19 @@ func Serialize(buffer []byte, datum interface{}) ([]byte, error) {
 	case Chan, Func, Interface, Ptr, UnsafePointer:
 		return buffer, fmt.Errorf("Serialize: Type %s is not serializable", value.Kind().String())
 	case String:
-		buffer, _ = Serialize(buffer, int64(len(datum.(string))))
-		return append(buffer, datum.(string)...), nil
+		strLen := len(datum.(string))
+		/*
+		 We allow for serialization of strings > int16 in length
+		 - If the string is larger than int16, we use the special value 32767 to indicate
+		   that there is a following int64 that specifies the true length
+		*/
+		if strLen > 32766 {
+			buffer, _ = Serialize(buffer, int16(32767))
+			buffer, _ = Serialize(buffer, int64(strLen))
+		} else {
+			buffer, _ = Serialize(buffer, int16(strLen))
+		}
+		return append(buffer, datum.(string)[:strLen]...), nil
 	case Struct:
 		for i := 0; i < value.NumField(); i++ {
 			subDatum := value.Field(i).Interface()

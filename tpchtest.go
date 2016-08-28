@@ -151,8 +151,9 @@ func ToInt64(b []byte) int64 {
 func ProcessByStrips(rchan chan [][]float64, threadID, numberOfThreads int, wg *sync.WaitGroup, fileName string) {
 	defer wg.Done()
 	var rowCount int
+	var ioTime, calcTime float64
 	defer func() {
-		fmt.Println("Row Count = ", rowCount)
+		fmt.Printf("Row Count = %d, IOtime = %5.3fs, CalcTime = %5.3fs\n", rowCount, ioTime, calcTime)
 	}()
 	inputFile, err := os.OpenFile(fileName, os.O_RDONLY, 0666)
 	if err != nil {
@@ -163,15 +164,20 @@ func ProcessByStrips(rchan chan [][]float64, threadID, numberOfThreads int, wg *
 
 	skipCount := threadID
 	for {
+		startTime := time.Now()
 		li, _, err := readLineItemData(inputFile, skipCount)
 		if err != nil {
 			break
 		}
+		ioTimePartial := time.Since(startTime)
 		rowCount += len(li)
 		if skipCount == threadID {
 			skipCount = numberOfThreads - 1
 		}
 		fr = AccumulateResultSet(Q1HashAgg(li), fr)
+		calcTimePartial := time.Since(startTime.Add(ioTimePartial))
+		calcTime += calcTimePartial.Seconds()
+		ioTime += ioTimePartial.Seconds()
 	}
 	rchan <- fr
 }

@@ -107,26 +107,10 @@ func main() {
 	fullResult := make([][]float64, 256)
 	for i := 0; i < numGoRoutines; i++ {
 		result := <-resultChannel
-		for res, val := range result {
-			if val != nil {
-				if fullResult[res] == nil {
-					fullResult[res] = make([]float64, 10)
-				}
-				fullResult[res][0] = val[0]
-				fullResult[res][1] = val[1]
-				for ii := 2; ii < 10; ii++ {
-					fullResult[res][ii] += val[ii]
-				}
-			}
-		}
+		fullResult = AccumulateResultSet(result, fullResult)
 	}
-	for _, val := range fullResult {
-		if val != nil {
-			for ii := 6; ii < 9; ii++ {
-				val[ii] /= val[9]
-			}
-		}
-	}
+	fullResult = FinalizeResultSet(fullResult)
+
 	duration := time.Since(startTime)
 	fmt.Printf("Q1 Execution Time (including IO) = %6.2fs\n", duration.Seconds())
 	for _, val := range fullResult {
@@ -187,19 +171,7 @@ func ProcessByStrips(rchan chan [][]float64, threadID, numberOfThreads int, wg *
 		if skipCount == threadID {
 			skipCount = numberOfThreads - 1
 		}
-		stripResult := Q1HashAgg(li)
-		for res, val := range stripResult {
-			if val != nil {
-				if fr[res] == nil {
-					fr[res] = make([]float64, 10)
-				}
-				fr[res][0] = val[0]
-				fr[res][1] = val[1]
-				for i := 2; i < 10; i++ {
-					fr[res][i] += val[i]
-				}
-			}
-		}
+		fr = AccumulateResultSet(Q1HashAgg(li), fr)
 	}
 	rchan <- fr
 }
@@ -321,4 +293,30 @@ func Q1HashAgg(rowData []*LineItemRow) (d [][]float64) {
 		}
 	}
 	return d
+}
+
+func AccumulateResultSet(partialResult [][]float64, fr [][]float64) [][]float64 {
+	for res, val := range partialResult {
+		if val != nil {
+			if fr[res] == nil {
+				fr[res] = make([]float64, 10)
+			}
+			fr[res][0] = val[0]
+			fr[res][1] = val[1]
+			for i := 2; i < 10; i++ {
+				fr[res][i] += val[i]
+			}
+		}
+	}
+	return fr
+}
+func FinalizeResultSet(partialResult [][]float64) [][]float64 {
+	for _, val := range partialResult {
+		if val != nil {
+			for ii := 6; ii < 9; ii++ {
+				val[ii] /= val[9]
+			}
+		}
+	}
+	return partialResult
 }

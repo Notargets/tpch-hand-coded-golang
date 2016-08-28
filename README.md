@@ -22,5 +22,5 @@ This is a testing ground for high performance execution ideas. The language is "
     - Now you can run the tpchq1 test:
         go run tpchtest.go -maxProcs 4
 
-Note that the code limits the number of goroutines to the number of CPU cores you have on your machine.
+**Note** the code limits the number of goroutines to the number of CPU cores you have on your machine.
 

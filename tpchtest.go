@@ -105,7 +105,8 @@ func main() {
 
 	wg := new(sync.WaitGroup)
 	startTime := time.Now()
-	chunkChannel := make(chan Chunk, 4*(numGoRoutines+1))
+	//chunkChannel := make(chan Chunk, 100*(numGoRoutines+1))
+	chunkChannel := make(chan Chunk, (numGoRoutines+1))
 	// Spin up the async reader
 	go parallelReader("lineitem.bin", chunkChannel)
 
@@ -226,8 +227,8 @@ func parallelReader(fileName string, chunkChannel chan Chunk) {
 	}
 }
 
-func readLineItemData(chunk Chunk) (li []*LineItemRow, liv []LineItemRowVariable) {
-	lineitem1GB := make([]*LineItemRow, chunk.Nrows)
+func readLineItemData(chunk Chunk) (li []LineItemRow, liv []LineItemRowVariable) {
+	lineitem1GBAligned := make([]LineItemRow, chunk.Nrows)
 	lineitem1GBVariable := make([]LineItemRowVariable, chunk.Nrows)
 	castToRow := func(b []byte) *LineItemRow {
 		return (*LineItemRow)(unsafe.Pointer(&b[0]))
@@ -237,7 +238,7 @@ func readLineItemData(chunk Chunk) (li []*LineItemRow, liv []LineItemRowVariable
 		if rowNum == chunk.Nrows {
 			break
 		}
-		lineitem1GB[rowNum] = castToRow(chunk.Data[cursor:])
+		lineitem1GBAligned[rowNum] = *(castToRow(chunk.Data[cursor:]))
 		cursor += 90
 
 		liv := &lineitem1GBVariable[rowNum]
@@ -265,10 +266,10 @@ func readLineItemData(chunk Chunk) (li []*LineItemRow, liv []LineItemRowVariable
 
 		rowNum++
 	}
-	return lineitem1GB, lineitem1GBVariable
+	return lineitem1GBAligned, lineitem1GBVariable
 }
 
-func Q1HashAgg(rowData []*LineItemRow) (d [][]float64) {
+func Q1HashAgg(rowData []LineItemRow) (d [][]float64) {
 	d = make([][]float64, 256)
 	for _, row := range rowData {
 		if row.l_shipdate <= datePredicate {

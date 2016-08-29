@@ -137,8 +137,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// We write 10000 rows at a time to allow for parallel IO on consumption
-	chunkSize := 10000
+	// We write 1000 rows at a time to allow for parallel IO on consumption
+	chunkSize := 1000
 	buffer := []byte{}
 	var rowCount int64
 	for i, row := range lineitem1GB {

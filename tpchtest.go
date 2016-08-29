@@ -63,7 +63,6 @@ type LineItemRow struct {
 	l_quantity, l_extendedprice, l_discount, l_tax float64
 	l_shipdate, l_commitdate, l_receiptdate        int64
 	l_returnflag, l_linestatus                     byte
-	padding	[6]byte
 }
 type LineItemRowVariable struct {
 	l_shipinstruct, l_shipmode, l_comment MyString
@@ -115,7 +114,7 @@ func main() {
 	for threadID := 0; threadID < numGoRoutines; threadID++ {
 		fmt.Printf("Starting thread# %d\n", threadID)
 		wg.Add(1)
-		go ProcessByStrips(resultChannel, chunkChannel, threadID, numGoRoutines, wg, "lineitem.bin")
+		go ProcessByStrips(resultChannel, chunkChannel, threadID, numGoRoutines, wg)
 	}
 	wg.Wait()
 
@@ -163,7 +162,7 @@ func ToInt64(b []byte) int64 {
 	return *(*int64)(unsafe.Pointer(&b[0]))
 }
 
-func ProcessByStrips(resultChan chan [][]float64, chunkChannel chan Chunk, threadID, numberOfThreads int, wg *sync.WaitGroup, fileName string) {
+func ProcessByStrips(resultChan chan [][]float64, chunkChannel chan Chunk, threadID, numberOfThreads int, wg *sync.WaitGroup) {
 	var rowCount int
 	var ioTime, calcTime float64
 	defer func() {
@@ -175,7 +174,7 @@ func ProcessByStrips(resultChan chan [][]float64, chunkChannel chan Chunk, threa
 
 	for {
 		startTime := time.Now()
-		chunk, open := <- chunkChannel
+		chunk, open := <-chunkChannel
 		if !open {
 			break
 		}
@@ -192,8 +191,9 @@ func ProcessByStrips(resultChan chan [][]float64, chunkChannel chan Chunk, threa
 
 type Chunk struct {
 	Nrows int
-	Data []byte
+	Data  []byte
 }
+
 func parallelReader(fileName string, chunkChannel chan Chunk) {
 	inputFile, err := os.OpenFile(fileName, os.O_RDONLY, 0666)
 	if err != nil {
@@ -235,7 +235,7 @@ func readLineItemData(chunk Chunk) (li []LineItemRow, liv []LineItemRowVariable)
 		return (*LineItemRow)(unsafe.Pointer(&b[0]))
 	}
 	var cursor int
-	for i:=0; i<chunk.Nrows; i++ {
+	for i := 0; i < chunk.Nrows; i++ {
 		lineitem1GBAligned[i] = *(castToRow(chunk.Data[cursor:]))
 		cursor += 90
 

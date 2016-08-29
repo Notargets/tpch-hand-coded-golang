@@ -63,6 +63,7 @@ type LineItemRow struct {
 	l_quantity, l_extendedprice, l_discount, l_tax float64
 	l_shipdate, l_commitdate, l_receiptdate        int64
 	l_returnflag, l_linestatus                     byte
+	padding	[6]byte
 }
 type LineItemRowVariable struct {
 	l_shipinstruct, l_shipmode, l_comment MyString
@@ -106,7 +107,7 @@ func main() {
 	wg := new(sync.WaitGroup)
 	startTime := time.Now()
 	//chunkChannel := make(chan Chunk, 100*(numGoRoutines+1))
-	chunkChannel := make(chan Chunk, (numGoRoutines+1))
+	chunkChannel := make(chan Chunk, 10*(numGoRoutines+1))
 	// Spin up the async reader
 	go parallelReader("lineitem.bin", chunkChannel)
 
@@ -163,10 +164,10 @@ func ToInt64(b []byte) int64 {
 }
 
 func ProcessByStrips(resultChan chan [][]float64, chunkChannel chan Chunk, threadID, numberOfThreads int, wg *sync.WaitGroup, fileName string) {
-	defer wg.Done()
 	var rowCount int
 	var ioTime, calcTime float64
 	defer func() {
+		wg.Done()
 		fmt.Printf("Row Count = %d, IOtime = %5.3fs, CalcTime = %5.3fs\n", rowCount, ioTime, calcTime)
 	}()
 
@@ -233,15 +234,12 @@ func readLineItemData(chunk Chunk) (li []LineItemRow, liv []LineItemRowVariable)
 	castToRow := func(b []byte) *LineItemRow {
 		return (*LineItemRow)(unsafe.Pointer(&b[0]))
 	}
-	var rowNum, cursor int
-	for {
-		if rowNum == chunk.Nrows {
-			break
-		}
-		lineitem1GBAligned[rowNum] = *(castToRow(chunk.Data[cursor:]))
+	var cursor int
+	for i:=0; i<chunk.Nrows; i++ {
+		lineitem1GBAligned[i] = *(castToRow(chunk.Data[cursor:]))
 		cursor += 90
 
-		liv := &lineitem1GBVariable[rowNum]
+		liv := &lineitem1GBVariable[i]
 
 		liv.l_shipinstruct.SetLen(chunk.Data[cursor:])
 		cursor += 2
@@ -263,8 +261,6 @@ func readLineItemData(chunk Chunk) (li []LineItemRow, liv []LineItemRowVariable)
 		strlen = int(liv.l_comment.Len)
 		liv.l_comment.SetData(chunk.Data[cursor : cursor+strlen])
 		cursor += strlen
-
-		rowNum++
 	}
 	return lineitem1GBAligned, lineitem1GBVariable
 }

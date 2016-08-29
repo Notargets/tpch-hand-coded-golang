@@ -10,13 +10,18 @@ import (
 	"unsafe"
 )
 
-var maxProcs int
+var maxProcs, forceProcs int
 var datePredicate int64
 
 func init() {
 	flag.IntVar(&maxProcs, "maxProcs", 1024, "Maximum number of parallel processes to launch")
+	flag.IntVar(&forceProcs, "forceProcs", 0, "Required number of parallel processes to launch")
 	flag.Parse()
-	fmt.Printf("Maximum number of processes set to: %d\n", maxProcs)
+	if forceProcs != 0 {
+		fmt.Printf("Forced number of processes set to: %d\n", forceProcs)
+	} else {
+		fmt.Printf("Maximum number of processes set to: %d\n", maxProcs)
+	}
 	parsed, _ := time.Parse("2006-01-02", "1998-12-01")
 	datePredicate = parsed.AddDate(0, 0, -115).Unix()
 }
@@ -94,13 +99,21 @@ func main() {
 	*/
 
 	numGoRoutines := MaxParallelism(maxProcs)
+	if forceProcs != 0 {
+		numGoRoutines = forceProcs
+	}
+
 	wg := new(sync.WaitGroup)
 	startTime := time.Now()
+	chunkChannel := make(chan Chunk, 4*(numGoRoutines+1))
+	// Spin up the async reader
+	go parallelReader("lineitem.bin", chunkChannel)
+
 	resultChannel := make(chan [][]float64, numGoRoutines+1)
 	for threadID := 0; threadID < numGoRoutines; threadID++ {
 		fmt.Printf("Starting thread# %d\n", threadID)
 		wg.Add(1)
-		go ProcessByStrips(resultChannel, threadID, numGoRoutines, wg, "lineitem.bin")
+		go ProcessByStrips(resultChannel, chunkChannel, threadID, numGoRoutines, wg, "lineitem.bin")
 	}
 	wg.Wait()
 
@@ -131,58 +144,59 @@ func main() {
 	}
 }
 
-func MaxParallelism(limiter int) (nParallel int) {
-	nParallel = limiter
+func MaxParallelism(limiter int) (nLimit int) {
+	nLimit = limiter
 	maxProcs := runtime.GOMAXPROCS(0)
 	numCPU := runtime.NumCPU()
-	if maxProcs < nParallel {
-		nParallel = maxProcs
+	if maxProcs < nLimit {
+		nLimit = maxProcs
 	}
-	if numCPU < nParallel {
-		nParallel = numCPU
+	if numCPU < nLimit {
+		nLimit = numCPU
 	}
-	return nParallel
+	return nLimit
 }
 
 func ToInt64(b []byte) int64 {
 	return *(*int64)(unsafe.Pointer(&b[0]))
 }
 
-func ProcessByStrips(rchan chan [][]float64, threadID, numberOfThreads int, wg *sync.WaitGroup, fileName string) {
+func ProcessByStrips(resultChan chan [][]float64, chunkChannel chan Chunk, threadID, numberOfThreads int, wg *sync.WaitGroup, fileName string) {
 	defer wg.Done()
 	var rowCount int
 	var ioTime, calcTime float64
 	defer func() {
 		fmt.Printf("Row Count = %d, IOtime = %5.3fs, CalcTime = %5.3fs\n", rowCount, ioTime, calcTime)
 	}()
-	inputFile, err := os.OpenFile(fileName, os.O_RDONLY, 0666)
-	if err != nil {
-		fmt.Println("Error opening input file")
-	}
 
 	fr := make([][]float64, 256)
 
-	skipCount := threadID
 	for {
 		startTime := time.Now()
-		li, _, err := readLineItemData(inputFile, skipCount)
-		if err != nil {
+		chunk, open := <- chunkChannel
+		if !open {
 			break
 		}
+		li, _ := readLineItemData(chunk)
 		ioTimePartial := time.Since(startTime)
 		rowCount += len(li)
-		if skipCount == threadID {
-			skipCount = numberOfThreads - 1
-		}
 		fr = AccumulateResultSet(Q1HashAgg(li), fr)
 		calcTimePartial := time.Since(startTime.Add(ioTimePartial))
 		calcTime += calcTimePartial.Seconds()
 		ioTime += ioTimePartial.Seconds()
 	}
-	rchan <- fr
+	resultChan <- fr
 }
 
-func readLineItemData(inputFile *os.File, skipCount int) (li []*LineItemRow, liv []LineItemRowVariable, err error) {
+type Chunk struct {
+	Nrows int
+	Data []byte
+}
+func parallelReader(fileName string, chunkChannel chan Chunk) {
+	inputFile, err := os.OpenFile(fileName, os.O_RDONLY, 0666)
+	if err != nil {
+		fmt.Println("Error opening input file")
+	}
 	// Read the metadata for this chunk
 	metaBuffer := make([]byte, 16)
 
@@ -193,74 +207,65 @@ func readLineItemData(inputFile *os.File, skipCount int) (li []*LineItemRow, liv
 		}
 		return ToInt64(metaBuffer), ToInt64(metaBuffer[8:]), nil
 	}
-	skipChunk := func() error {
-		_, size, err := readMeta()
+
+	for {
+		nRows, size, err := readMeta()
 		if err != nil {
-			return err
+			close(chunkChannel)
+			break
 		}
-		//		fmt.Printf("Skipping %d rows\n", nRows)
-		inputFile.Seek(size, os.SEEK_CUR)
-		return nil
-	}
-	for i := 0; i < skipCount; i++ {
-		if err = skipChunk(); err != nil {
-			return nil, nil, err
+
+		inputBuffer := make([]byte, size)
+		n, err := inputFile.Read(inputBuffer)
+		if n != len(inputBuffer) || err != nil {
+			fmt.Println("Error reading input file")
+			os.Exit(1)
 		}
+		chunkChannel <- Chunk{Nrows: int(nRows), Data: inputBuffer}
+		//	fmt.Printf("Read a buffer of size %d with %d rows\n", n, nRows)
 	}
+}
 
-	nRows, size, err := readMeta()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	inputBuffer := make([]byte, size)
-	n, err := inputFile.Read(inputBuffer)
-	if n != len(inputBuffer) || err != nil {
-		fmt.Println("Error reading input file")
-		os.Exit(1)
-	}
-	//	fmt.Printf("Read a buffer of size %d with %d rows\n", n, nRows)
-
-	lineitem1GB := make([]*LineItemRow, nRows)
-	lineitem1GBVariable := make([]LineItemRowVariable, nRows)
+func readLineItemData(chunk Chunk) (li []*LineItemRow, liv []LineItemRowVariable) {
+	lineitem1GB := make([]*LineItemRow, chunk.Nrows)
+	lineitem1GBVariable := make([]LineItemRowVariable, chunk.Nrows)
 	castToRow := func(b []byte) *LineItemRow {
 		return (*LineItemRow)(unsafe.Pointer(&b[0]))
 	}
-	var rowNum int64
-	var cursor int
+	var rowNum, cursor int
 	for {
-		if rowNum == nRows {
+		if rowNum == chunk.Nrows {
 			break
 		}
-		lineitem1GB[rowNum] = castToRow(inputBuffer[cursor:])
+		lineitem1GB[rowNum] = castToRow(chunk.Data[cursor:])
 		cursor += 90
 
 		liv := &lineitem1GBVariable[rowNum]
 
-		liv.l_shipinstruct.SetLen(inputBuffer[cursor:])
+		liv.l_shipinstruct.SetLen(chunk.Data[cursor:])
 		cursor += 2
 
 		strlen := int(liv.l_shipinstruct.Len)
-		liv.l_shipinstruct.SetData(inputBuffer[cursor : cursor+strlen])
+		liv.l_shipinstruct.SetData(chunk.Data[cursor : cursor+strlen])
 		cursor += strlen
 
-		liv.l_shipmode.SetLen(inputBuffer[cursor:])
+		liv.l_shipmode.SetLen(chunk.Data[cursor:])
 		cursor += 2
 
 		strlen = int(liv.l_shipmode.Len)
-		liv.l_shipmode.SetData(inputBuffer[cursor : cursor+strlen])
+		liv.l_shipmode.SetData(chunk.Data[cursor : cursor+strlen])
 		cursor += strlen
 
-		liv.l_comment.SetLen(inputBuffer[cursor:])
+		liv.l_comment.SetLen(chunk.Data[cursor:])
 		cursor += 2
 
 		strlen = int(liv.l_comment.Len)
-		liv.l_comment.SetData(inputBuffer[cursor : cursor+strlen])
+		liv.l_comment.SetData(chunk.Data[cursor : cursor+strlen])
 		cursor += strlen
 
 		rowNum++
 	}
-	return lineitem1GB, lineitem1GBVariable, nil
+	return lineitem1GB, lineitem1GBVariable
 }
 
 func Q1HashAgg(rowData []*LineItemRow) (d [][]float64) {

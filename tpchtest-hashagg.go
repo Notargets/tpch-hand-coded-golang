@@ -119,8 +119,8 @@ func main() {
 	wg.Wait()
 
 	fullResult := make([]map[byte][]float64,2)
-	fullResult[0] = make(map[byte][]float64)
-	fullResult[1] = make(map[byte][]float64)
+	fullResult[0] = make(map[byte][]float64, 256)
+	fullResult[1] = make(map[byte][]float64, 256)
 	for i := 0; i < numGoRoutines; i++ {
 		result := <-resultChannel
 		fullResult = AccumulateResultSet(result, fullResult)
@@ -174,8 +174,8 @@ func ProcessByStrips(resultChan chan []map[byte][]float64, chunkChannel chan Chu
 	}()
 
 	fr := make([]map[byte][]float64,2)
-	fr[0] = make(map[byte][]float64)
-	fr[1] = make(map[byte][]float64)
+	fr[0] = make(map[byte][]float64, 256)
+	fr[1] = make(map[byte][]float64, 256)
 
 	Q1HashAgg := func(rowData []LineItemRow) {
 		for _, row := range rowData {

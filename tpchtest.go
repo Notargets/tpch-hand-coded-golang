@@ -110,7 +110,7 @@ func main() {
 	// Spin up the async reader
 	go parallelReader("lineitem.bin", chunkChannel)
 
-	resultChannel := make(chan [][]float64, numGoRoutines+1)
+	resultChannel := make(chan [][][]float64, numGoRoutines+1)
 	for threadID := 0; threadID < numGoRoutines; threadID++ {
 		fmt.Printf("Starting thread# %d\n", threadID)
 		wg.Add(1)
@@ -118,7 +118,9 @@ func main() {
 	}
 	wg.Wait()
 
-	fullResult := make([][]float64, 256)
+	fullResult := make([][][]float64,2)
+	fullResult[0] = make([][]float64, 256)
+	fullResult[1] = make([][]float64, 256)
 	for i := 0; i < numGoRoutines; i++ {
 		result := <-resultChannel
 		fullResult = AccumulateResultSet(result, fullResult)
@@ -127,20 +129,22 @@ func main() {
 
 	duration := time.Since(startTime)
 	fmt.Printf("Q1 Execution Time (including IO) = %6.2fs\n", duration.Seconds())
-	for _, val := range fullResult {
-		if val != nil {
-			for i := 0; i < 2; i++ {
-				fmt.Printf("%c ", byte(val[i]))
+	for _, Map := range fullResult {
+		for _, val := range Map {
+			if val != nil {
+				for i := 0; i < 2; i++ {
+					fmt.Printf("%c ", byte(val[i]))
+				}
+				fmt.Printf("%10d ", int(val[2]))
+				for i := 3; i < 6; i++ {
+					fmt.Printf("%15.2f ", val[i])
+				}
+				for i := 6; i < 9; i++ {
+					fmt.Printf("%7.2f ", val[i])
+				}
+				fmt.Printf("%10d ", int(val[9]))
+				fmt.Printf("\n")
 			}
-			fmt.Printf("%10d ", int(val[2]))
-			for i := 3; i < 6; i++ {
-				fmt.Printf("%15.2f ", val[i])
-			}
-			for i := 6; i < 9; i++ {
-				fmt.Printf("%7.2f ", val[i])
-			}
-			fmt.Printf("%10d ", int(val[9]))
-			fmt.Printf("\n")
 		}
 	}
 }
@@ -162,7 +166,8 @@ func ToInt64(b []byte) int64 {
 	return *(*int64)(unsafe.Pointer(&b[0]))
 }
 
-func ProcessByStrips(resultChan chan [][]float64, chunkChannel chan Chunk, threadID, numberOfThreads int, wg *sync.WaitGroup) {
+
+func ProcessByStrips(resultChan chan [][][]float64, chunkChannel chan Chunk, threadID, numberOfThreads int, wg *sync.WaitGroup) {
 	var rowCount int
 	var ioTime, calcTime float64
 	defer func() {
@@ -170,7 +175,82 @@ func ProcessByStrips(resultChan chan [][]float64, chunkChannel chan Chunk, threa
 		fmt.Printf("Row Count = %d, IOtime = %5.3fs, CalcTime = %5.3fs\n", rowCount, ioTime, calcTime)
 	}()
 
-	fr := make([][]float64, 256)
+	fr := make([][][]float64,2)
+	fr[0] = make([][]float64, 256)
+	fr[1] = make([][]float64, 256)
+
+	Q1HashAgg := func(rowData []LineItemRow) {
+		for _, row := range rowData {
+			if row.l_shipdate <= datePredicate {
+				res1 := row.l_returnflag
+				res2 := row.l_linestatus
+				if fr[0][res1] == nil {
+					fr[0][res1] = make([]float64, 10)
+				}
+				if fr[1][res2] == nil {
+					fr[1][res2] = make([]float64, 10)
+				}
+				fr[0][res1][0] = float64(res1)
+				fr[0][res1][1] = float64(res2)
+				fr[0][res1][2] += row.l_quantity
+				fr[0][res1][3] += row.l_extendedprice
+				fr[0][res1][4] += row.l_extendedprice * (1. - row.l_discount)
+				fr[0][res1][5] += row.l_extendedprice * (1. - row.l_discount) * (1. + row.l_tax)
+				fr[0][res1][6] += row.l_quantity
+				fr[0][res1][7] += row.l_extendedprice
+				fr[0][res1][8] += row.l_discount
+				fr[0][res1][9]++ //count
+
+				fr[1][res2][0] = float64(res1)
+				fr[1][res2][1] = float64(res2)
+				fr[1][res2][2] += row.l_quantity
+				fr[1][res2][3] += row.l_extendedprice
+				fr[1][res2][4] += row.l_extendedprice * (1. - row.l_discount)
+				fr[1][res2][5] += row.l_extendedprice * (1. - row.l_discount) * (1. + row.l_tax)
+				fr[1][res2][6] += row.l_quantity
+				fr[1][res2][7] += row.l_extendedprice
+				fr[1][res2][8] += row.l_discount
+				fr[1][res2][9]++ //count
+			}
+		}
+	}
+
+	readLineItemData := func(chunk Chunk) (li []LineItemRow, liv []LineItemRowVariable) {
+		lineitem1GBAligned := make([]LineItemRow, chunk.Nrows)
+		lineitem1GBVariable := make([]LineItemRowVariable, chunk.Nrows)
+		castToRow := func(b []byte) *LineItemRow {
+			return (*LineItemRow)(unsafe.Pointer(&b[0]))
+		}
+		var cursor int
+		for i := 0; i < chunk.Nrows; i++ {
+			lineitem1GBAligned[i] = *(castToRow(chunk.Data[cursor:]))
+			cursor += 90
+
+			liv := &lineitem1GBVariable[i]
+
+			liv.l_shipinstruct.SetLen(chunk.Data[cursor:])
+			cursor += 2
+
+			strlen := int(liv.l_shipinstruct.Len)
+			liv.l_shipinstruct.SetData(chunk.Data[cursor : cursor+strlen])
+			cursor += strlen
+
+			liv.l_shipmode.SetLen(chunk.Data[cursor:])
+			cursor += 2
+
+			strlen = int(liv.l_shipmode.Len)
+			liv.l_shipmode.SetData(chunk.Data[cursor : cursor+strlen])
+			cursor += strlen
+
+			liv.l_comment.SetLen(chunk.Data[cursor:])
+			cursor += 2
+
+			strlen = int(liv.l_comment.Len)
+			liv.l_comment.SetData(chunk.Data[cursor : cursor+strlen])
+			cursor += strlen
+		}
+		return lineitem1GBAligned, lineitem1GBVariable
+	}
 
 	for {
 		startTime := time.Now()
@@ -181,7 +261,7 @@ func ProcessByStrips(resultChan chan [][]float64, chunkChannel chan Chunk, threa
 		li, _ := readLineItemData(chunk)
 		ioTimePartial := time.Since(startTime)
 		rowCount += len(li)
-		fr = AccumulateResultSet(Q1HashAgg(li), fr)
+		Q1HashAgg(li)
 		calcTimePartial := time.Since(startTime.Add(ioTimePartial))
 		calcTime += calcTimePartial.Seconds()
 		ioTime += ioTimePartial.Seconds()
@@ -228,101 +308,31 @@ func parallelReader(fileName string, chunkChannel chan Chunk) {
 	}
 }
 
-func readLineItemData(chunk Chunk) (li []LineItemRow, liv []LineItemRowVariable) {
-	lineitem1GBAligned := make([]LineItemRow, chunk.Nrows)
-	lineitem1GBVariable := make([]LineItemRowVariable, chunk.Nrows)
-	castToRow := func(b []byte) *LineItemRow {
-		return (*LineItemRow)(unsafe.Pointer(&b[0]))
-	}
-	var cursor int
-	for i := 0; i < chunk.Nrows; i++ {
-		lineitem1GBAligned[i] = *(castToRow(chunk.Data[cursor:]))
-		cursor += 90
-
-		liv := &lineitem1GBVariable[i]
-
-		liv.l_shipinstruct.SetLen(chunk.Data[cursor:])
-		cursor += 2
-
-		strlen := int(liv.l_shipinstruct.Len)
-		liv.l_shipinstruct.SetData(chunk.Data[cursor : cursor+strlen])
-		cursor += strlen
-
-		liv.l_shipmode.SetLen(chunk.Data[cursor:])
-		cursor += 2
-
-		strlen = int(liv.l_shipmode.Len)
-		liv.l_shipmode.SetData(chunk.Data[cursor : cursor+strlen])
-		cursor += strlen
-
-		liv.l_comment.SetLen(chunk.Data[cursor:])
-		cursor += 2
-
-		strlen = int(liv.l_comment.Len)
-		liv.l_comment.SetData(chunk.Data[cursor : cursor+strlen])
-		cursor += strlen
-	}
-	return lineitem1GBAligned, lineitem1GBVariable
-}
-
-func Q1HashAgg(rowData []LineItemRow) (d [][]float64) {
-	d = make([][]float64, 256)
-	for _, row := range rowData {
-		if row.l_shipdate <= datePredicate {
-			res1 := row.l_returnflag
-			res2 := row.l_linestatus
-			if d[res1] == nil {
-				d[res1] = make([]float64, 10)
-			}
-			if d[res2] == nil {
-				d[res2] = make([]float64, 10)
-			}
-			d[res1][0] = float64(res1)
-			d[res1][1] = float64(res2)
-			d[res1][2] += row.l_quantity
-			d[res1][3] += row.l_extendedprice
-			d[res1][4] += row.l_extendedprice * (1. - row.l_discount)
-			d[res1][5] += row.l_extendedprice * (1. - row.l_discount) * (1. + row.l_tax)
-			d[res1][6] += row.l_quantity
-			d[res1][7] += row.l_extendedprice
-			d[res1][8] += row.l_discount
-			d[res1][9]++ //count
-
-			d[res2][0] = float64(res1)
-			d[res2][1] = float64(res2)
-			d[res2][2] += row.l_quantity
-			d[res2][3] += row.l_extendedprice
-			d[res2][4] += row.l_extendedprice * (1. - row.l_discount)
-			d[res2][5] += row.l_extendedprice * (1. - row.l_discount) * (1. + row.l_tax)
-			d[res2][6] += row.l_quantity
-			d[res2][7] += row.l_extendedprice
-			d[res2][8] += row.l_discount
-			d[res2][9]++ //count
-		}
-	}
-	return d
-}
-
-func AccumulateResultSet(partialResult [][]float64, fr [][]float64) [][]float64 {
-	for res, val := range partialResult {
-		if val != nil {
-			if fr[res] == nil {
-				fr[res] = make([]float64, 10)
-			}
-			fr[res][0] = val[0]
-			fr[res][1] = val[1]
-			for i := 2; i < 10; i++ {
-				fr[res][i] += val[i]
+func AccumulateResultSet(partialResult [][][]float64, fr [][][]float64) [][][]float64 {
+	for i, Map := range partialResult {
+		for res, val := range Map {
+			if val != nil {
+				if fr[i][res] == nil {
+					fr[i][res] = make([]float64, 10)
+				}
+				fr[i][res][0] = val[0]
+				fr[i][res][1] = val[1]
+				for ii := 2; ii < 10; ii++ {
+					fr[i][res][ii] += val[ii]
+				}
 			}
 		}
 	}
 	return fr
 }
-func FinalizeResultSet(partialResult [][]float64) [][]float64 {
-	for _, val := range partialResult {
-		if val != nil {
-			for ii := 6; ii < 9; ii++ {
-				val[ii] /= val[9]
+
+func FinalizeResultSet(partialResult [][][]float64) [][][]float64 {
+	for _, Map := range partialResult {
+		for _, val := range Map {
+			if val != nil {
+				for ii := 6; ii < 9; ii++ {
+					val[ii] /= val[9]
+				}
 			}
 		}
 	}

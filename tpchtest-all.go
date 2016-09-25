@@ -7,8 +7,9 @@ import (
 	"sync"
 	"time"
 	"unsafe"
-	"github.com/tpch-hand-coded-golang/array16bit"
+	"github.com/tpch-hand-coded-golang/array"
 	. "github.com/tpch-hand-coded-golang/reader"
+	"github.com/tpch-hand-coded-golang/executor"
 )
 
 var maxProcs, forceProcs int
@@ -89,6 +90,8 @@ func main() {
 		numGoRoutines = forceProcs
 	}
 
+	executor := array.NewExecutor8()
+
 	/*
 	---------------------- Begin query processing -------------------------
 	 */
@@ -106,43 +109,28 @@ func main() {
 	Process the query in parallel
 	 */
 	wg := new(sync.WaitGroup)
-	resultChannel := make(chan *array16bit.ResultSet, numGoRoutines+1)
+	resultChannel := make(chan interface{}, numGoRoutines+1)
 	for threadID := 0; threadID < numGoRoutines; threadID++ {
 		fmt.Printf("Starting thread# %d\n", threadID)
 		wg.Add(1)
-		go ProcessByStrips(resultChannel, chunkChannel, wg)
+		go ProcessByStrips(executor, resultChannel, chunkChannel, wg)
 	}
 	wg.Wait()
 
-	fullResult := array16bit.NewResultSet()
+	fullResult := executor.NewResultSet()
 	for i := 0; i < numGoRoutines; i++ {
 		result := <-resultChannel
-		array16bit.AccumulateResultSet(result, fullResult)
+		executor.AccumulateResultSet(result, fullResult)
 	}
-	array16bit.FinalizeResultSet(fullResult)
+	executor.FinalizeResultSet(fullResult)
 
 	/*
 	------------------- Query processing is finished ----------------------
 	 */
 	duration := time.Since(startTime)
-
 	fmt.Printf("Q1 Execution Time (including IO) = %6.2fs\n", duration.Seconds())
-	for i, Map := range fullResult.Data {
-		for _, key := range fullResult.Keymap[i] {
-			for ii := 0; ii < 2; ii++ {
-				fmt.Printf("%c ", byte(Map[key][ii]))
-			}
-			fmt.Printf("%10d ", int(Map[key][2]))
-			for ii := 3; ii < 6; ii++ {
-				fmt.Printf("%15.2f ", Map[key][ii])
-			}
-			for ii := 6; ii < 9; ii++ {
-				fmt.Printf("%7.2f ", Map[key][ii])
-			}
-			fmt.Printf("%10d ", int(Map[key][9]))
-			fmt.Printf("\n")
-		}
-	}
+
+	executor.PrintResultSet(fullResult)
 }
 
 func MaxParallelism(limiter int) (nLimit int) {
@@ -159,7 +147,7 @@ func MaxParallelism(limiter int) (nLimit int) {
 }
 
 
-func ProcessByStrips(resultChan chan *array16bit.ResultSet, chunkChannel chan DataChunk, wg *sync.WaitGroup) {
+func ProcessByStrips(ex executor.Executor, resultChan chan interface{}, chunkChannel chan DataChunk, wg *sync.WaitGroup) {
 	var rowCount int
 	var ioTime, calcTime float64
 	defer func() {
@@ -167,9 +155,8 @@ func ProcessByStrips(resultChan chan *array16bit.ResultSet, chunkChannel chan Da
 		fmt.Printf("Row Count = %d, IOtime = %5.3fs, CalcTime = %5.3fs\n", rowCount, ioTime, calcTime)
 	}()
 
-	fr := array16bit.NewResultSet()
-
-	Q1HashAgg := array16bit.Q1HashAgg
+	fr := ex.NewResultSet()
+	Q1HashAgg := ex.RunPart
 
 	readLineItemData := func(chunk DataChunk) (li []LineItemRow, liv []LineItemRowVariable) {
 		lineitem1GBAligned := make([]LineItemRow, chunk.Nrows)
@@ -222,5 +209,6 @@ func ProcessByStrips(resultChan chan *array16bit.ResultSet, chunkChannel chan Da
 		calcTime += calcTimePartial.Seconds()
 		ioTime += ioTimePartial.Seconds()
 	}
+
 	resultChan <- fr
 }

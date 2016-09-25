@@ -1,8 +1,59 @@
-package array16bit
+package array
 
 import (
+	"fmt"
 	. "github.com/tpch-hand-coded-golang/reader"
 )
+
+func AccumulateResultSet(i_partialResult interface{}, i_fr interface{}) {
+	partialResult := i_partialResult.(*ResultSet)
+	fr := i_fr.(*ResultSet)
+	for i, Map := range partialResult.Data {
+		for _, key := range partialResult.Keymap[i] {
+			if fr.Data[i][key] == nil {
+				fr.Data[i][key] = make([]float64, 10)
+				//				fmt.Printf("New key[%d] = %d\n",ii,key)
+				fr.Keymap[i] = append(fr.Keymap[i], key)
+			}
+			fr.Data[i][key][0] = Map[key][0]
+			fr.Data[i][key][1] = Map[key][1]
+			for ii := 2; ii < 10; ii++ {
+				fr.Data[i][key][ii] += Map[key][ii]
+			}
+		}
+	}
+}
+
+func FinalizeResultSet(i_partialResult interface{}) {
+	partialResult := i_partialResult.(*ResultSet)
+	for i, Map := range partialResult.Data {
+		for _, key := range partialResult.Keymap[i] {
+			for ii := 6; ii < 9; ii++ {
+				Map[key][ii] /= Map[key][9]
+			}
+		}
+	}
+}
+
+func PrintResultSet(i_fr interface{}) {
+	fr := i_fr.(*ResultSet)
+	for i, Map := range fr.Data {
+		for _, key := range fr.Keymap[i] {
+			for ii := 0; ii < 2; ii++ {
+				fmt.Printf("%c ", byte(Map[key][ii]))
+			}
+			fmt.Printf("%10d ", int(Map[key][2]))
+			for ii := 3; ii < 6; ii++ {
+				fmt.Printf("%15.2f ", Map[key][ii])
+			}
+			for ii := 6; ii < 9; ii++ {
+				fmt.Printf("%7.2f ", Map[key][ii])
+			}
+			fmt.Printf("%10d ", int(Map[key][9]))
+			fmt.Printf("\n")
+		}
+	}
+}
 
 type ResultSet struct {
 	/*
@@ -16,16 +67,18 @@ type ResultSet struct {
 	 */
 	Keymap [][]int
 }
-func NewResultSet() *ResultSet {
+
+func NewResultSet(buckets int) *ResultSet {
 	rs := new(ResultSet)
 	rs.Data = make([][][]float64,2)
-	rs.Data[0] = make([][]float64, 65535)
-	rs.Data[1] = make([][]float64, 65535)
+	rs.Data[0] = make([][]float64, buckets)
+	rs.Data[1] = make([][]float64, buckets)
 	rs.Keymap = make([][]int,2)
 	return rs
 }
 
-func Q1HashAgg (rowData []LineItemRow, fr *ResultSet) {
+func RunPart (rowData []LineItemRow, i_fr interface{}) {
+	fr := i_fr.(*ResultSet)
 	for _, row := range rowData {
 		if row.L_shipdate <= DatePredicate {
 			res1 := row.L_returnflag
@@ -59,33 +112,6 @@ func Q1HashAgg (rowData []LineItemRow, fr *ResultSet) {
 			fr.Data[1][res2][7] += row.L_extendedprice
 			fr.Data[1][res2][8] += row.L_discount
 			fr.Data[1][res2][9]++ //count
-		}
-	}
-}
-
-func AccumulateResultSet(partialResult *ResultSet, fr *ResultSet) {
-	for i, Map := range partialResult.Data {
-		for _, key := range partialResult.Keymap[i] {
-			if fr.Data[i][key] == nil {
-				fr.Data[i][key] = make([]float64, 10)
-//				fmt.Printf("New key[%d] = %d\n",ii,key)
-				fr.Keymap[i] = append(fr.Keymap[i], key)
-			}
-			fr.Data[i][key][0] = Map[key][0]
-			fr.Data[i][key][1] = Map[key][1]
-			for ii := 2; ii < 10; ii++ {
-				fr.Data[i][key][ii] += Map[key][ii]
-			}
-		}
-	}
-}
-
-func FinalizeResultSet(partialResult *ResultSet) {
-	for i, Map := range partialResult.Data {
-		for _, key := range partialResult.Keymap[i] {
-			for ii := 6; ii < 9; ii++ {
-				Map[key][ii] /= Map[key][9]
-			}
 		}
 	}
 }

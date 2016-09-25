@@ -1,0 +1,226 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"runtime"
+	"sync"
+	"time"
+	"unsafe"
+	"github.com/tpch-hand-coded-golang/array16bit"
+	. "github.com/tpch-hand-coded-golang/reader"
+)
+
+var maxProcs, forceProcs int
+var RunSetup struct {
+	Run8bit, Run16bit, RunHashagg, RunIndirect bool
+}
+
+func init() {
+	flag.IntVar(&maxProcs, "maxProcs", 1024, "Maximum number of parallel processes to launch")
+	flag.IntVar(&forceProcs, "forceProcs", 0, "Required number of parallel processes to launch")
+	flag.BoolVar(&RunSetup.Run8bit,"Run8bit", true, "Run 8 bit precision array test")
+	flag.BoolVar(&RunSetup.Run16bit,"Run16bit", false, "Run 16 bit precision array test")
+	flag.BoolVar(&RunSetup.RunHashagg, "RunHashAgg", false, "Run HashAgg test")
+	flag.BoolVar(&RunSetup.RunIndirect, "RunIndirect", false, "Run Indirect for array tests")
+	flag.Parse()
+	if forceProcs != 0 {
+		fmt.Printf("Forced number of processes set to: %d\n", forceProcs)
+	} else {
+		fmt.Printf("Maximum number of processes set to: %d\n", maxProcs)
+	}
+	parsed, _ := time.Parse("2006-01-02", "1998-12-01")
+	DatePredicate = parsed.AddDate(0, 0, -115).Unix()
+}
+
+// From the DDL in the TPC-H benchmark directory:
+/*
+CREATE TABLE LINEITEM ( L_ORDERKEY    INTEGER NOT NULL,
+                             L_PARTKEY     INTEGER NOT NULL,
+                             L_SUPPKEY     INTEGER NOT NULL,
+                             L_LINENUMBER  INTEGER NOT NULL,
+                             L_QUANTITY    FLOAT8 NOT NULL,
+                             L_EXTENDEDPRICE  FLOAT8 NOT NULL,
+                             L_DISCOUNT    FLOAT8 NOT NULL,
+                             L_TAX         FLOAT8 NOT NULL,
+                             L_RETURNFLAG  CHAR(1) NOT NULL,
+                             L_LINESTATUS  CHAR(1) NOT NULL,
+                             L_SHIPDATE    DATE NOT NULL,
+                             L_COMMITDATE  DATE NOT NULL,
+                             L_RECEIPTDATE DATE NOT NULL,
+                             L_SHIPINSTRUCT TEXT NOT NULL,  -- R
+                             L_SHIPMODE     TEXT NOT NULL,  -- R
+                             L_COMMENT      TEXT NOT NULL) WITH (appendonly=true,orientation=column);
+
+*/
+
+func main() {
+	/*
+	   select
+	   	L_returnflag,
+	   	L_linestatus,
+	   	sum(L_quantity) as sum_qty,
+	   	sum(L_extendedprice) as sum_base_price,
+	   	sum(L_extendedprice * (1 - L_discount)) as sum_disc_price,
+	   	sum(L_extendedprice * (1 - L_discount) * (1 + L_tax)) as sum_charge,
+	   	avg(L_quantity) as avg_qty,
+	   	avg(L_extendedprice) as avg_price,
+	   	avg(L_discount) as avg_disc,
+	   	count(*) as count_order
+	   from
+	   	lineitem
+	   where
+	   	L_shipdate <= date '1998-12-01' - interval '115 day'
+	   group by
+	   	L_returnflag,
+	   	L_linestatus
+	   order by
+	   	L_returnflag,
+	   	L_linestatus;
+	*/
+	/*
+	 We need a map of columns and of grouping buckets, because both are simple ordinal sets we'll use slices
+	 	- The first slice level is the grouping bucket
+	 	- The second slice level is the result column number
+	*/
+
+	numGoRoutines := MaxParallelism(maxProcs)
+	if forceProcs != 0 {
+		numGoRoutines = forceProcs
+	}
+
+	/*
+	---------------------- Begin query processing -------------------------
+	 */
+	startTime := time.Now()
+
+	/*
+	Startup the read thread - reads data in the background
+	 */
+	//chunkChannel := make(chan Chunk, 100*(numGoRoutines+1))
+	chunkChannel := make(chan DataChunk, 10*(numGoRoutines+1))
+	// Spin up the async reader
+	go ParallelReader("lineitem.bin", chunkChannel)
+
+	/*
+	Process the query in parallel
+	 */
+	wg := new(sync.WaitGroup)
+	resultChannel := make(chan *array16bit.ResultSet, numGoRoutines+1)
+	for threadID := 0; threadID < numGoRoutines; threadID++ {
+		fmt.Printf("Starting thread# %d\n", threadID)
+		wg.Add(1)
+		go ProcessByStrips(resultChannel, chunkChannel, wg)
+	}
+	wg.Wait()
+
+	fullResult := array16bit.NewResultSet()
+	for i := 0; i < numGoRoutines; i++ {
+		result := <-resultChannel
+		array16bit.AccumulateResultSet(result, fullResult)
+	}
+	array16bit.FinalizeResultSet(fullResult)
+
+	/*
+	------------------- Query processing is finished ----------------------
+	 */
+	duration := time.Since(startTime)
+
+	fmt.Printf("Q1 Execution Time (including IO) = %6.2fs\n", duration.Seconds())
+	for i, Map := range fullResult.Data {
+		for _, key := range fullResult.Keymap[i] {
+			for ii := 0; ii < 2; ii++ {
+				fmt.Printf("%c ", byte(Map[key][ii]))
+			}
+			fmt.Printf("%10d ", int(Map[key][2]))
+			for ii := 3; ii < 6; ii++ {
+				fmt.Printf("%15.2f ", Map[key][ii])
+			}
+			for ii := 6; ii < 9; ii++ {
+				fmt.Printf("%7.2f ", Map[key][ii])
+			}
+			fmt.Printf("%10d ", int(Map[key][9]))
+			fmt.Printf("\n")
+		}
+	}
+}
+
+func MaxParallelism(limiter int) (nLimit int) {
+	nLimit = limiter
+	maxProcs := runtime.GOMAXPROCS(0)
+	numCPU := runtime.NumCPU()
+	if maxProcs < nLimit {
+		nLimit = maxProcs
+	}
+	if numCPU < nLimit {
+		nLimit = numCPU
+	}
+	return nLimit
+}
+
+
+func ProcessByStrips(resultChan chan *array16bit.ResultSet, chunkChannel chan DataChunk, wg *sync.WaitGroup) {
+	var rowCount int
+	var ioTime, calcTime float64
+	defer func() {
+		wg.Done()
+		fmt.Printf("Row Count = %d, IOtime = %5.3fs, CalcTime = %5.3fs\n", rowCount, ioTime, calcTime)
+	}()
+
+	fr := array16bit.NewResultSet()
+
+	Q1HashAgg := array16bit.Q1HashAgg
+
+	readLineItemData := func(chunk DataChunk) (li []LineItemRow, liv []LineItemRowVariable) {
+		lineitem1GBAligned := make([]LineItemRow, chunk.Nrows)
+		lineitem1GBVariable := make([]LineItemRowVariable, chunk.Nrows)
+		castToRow := func(b []byte) *LineItemRow {
+			return (*LineItemRow)(unsafe.Pointer(&b[0]))
+		}
+		var cursor int
+		for i := 0; i < chunk.Nrows; i++ {
+			lineitem1GBAligned[i] = *(castToRow(chunk.Data[cursor:]))
+			cursor += 90
+
+			liv := &lineitem1GBVariable[i]
+
+			liv.L_shipinstruct.SetLen(chunk.Data[cursor:])
+			cursor += 2
+
+			strlen := int(liv.L_shipinstruct.Len)
+			liv.L_shipinstruct.SetData(chunk.Data[cursor : cursor+strlen])
+			cursor += strlen
+
+			liv.L_shipmode.SetLen(chunk.Data[cursor:])
+			cursor += 2
+
+			strlen = int(liv.L_shipmode.Len)
+			liv.L_shipmode.SetData(chunk.Data[cursor : cursor+strlen])
+			cursor += strlen
+
+			liv.L_comment.SetLen(chunk.Data[cursor:])
+			cursor += 2
+
+			strlen = int(liv.L_comment.Len)
+			liv.L_comment.SetData(chunk.Data[cursor : cursor+strlen])
+			cursor += strlen
+		}
+		return lineitem1GBAligned, lineitem1GBVariable
+	}
+
+	for {
+		startTime := time.Now()
+		chunk, open := <-chunkChannel
+		if !open {
+			break
+		}
+		li, _ := readLineItemData(chunk)
+		ioTimePartial := time.Since(startTime)
+		rowCount += len(li)
+		Q1HashAgg(li, fr)
+		calcTimePartial := time.Since(startTime.Add(ioTimePartial))
+		calcTime += calcTimePartial.Seconds()
+		ioTime += ioTimePartial.Seconds()
+	}
+	resultChan <- fr
+}

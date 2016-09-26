@@ -10,6 +10,7 @@ import (
 	"github.com/tpch-hand-coded-golang/array"
 	. "github.com/tpch-hand-coded-golang/reader"
 	"github.com/tpch-hand-coded-golang/executor"
+	"github.com/tpch-hand-coded-golang/hashing"
 )
 
 var maxProcs, forceProcs int
@@ -85,12 +86,16 @@ func main() {
 	 	- The second slice level is the result column number
 	*/
 
+	RunQuery(array.NewExecutor8())
+	RunQuery(array.NewExecutor16())
+	RunQuery(hashing.NewExecutor())
+}
+
+func RunQuery(executor executor.Executor)	{
 	numGoRoutines := MaxParallelism(maxProcs)
 	if forceProcs != 0 {
 		numGoRoutines = forceProcs
 	}
-
-	executor := array.NewExecutor8()
 
 	/*
 	---------------------- Begin query processing -------------------------
@@ -130,6 +135,7 @@ func main() {
 	duration := time.Since(startTime)
 	fmt.Printf("Q1 Execution Time (including IO) = %6.2fs\n", duration.Seconds())
 
+	fmt.Printf("Ran with: %s\n", executor.PrintableDescription())
 	executor.PrintResultSet(fullResult)
 }
 

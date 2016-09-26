@@ -5,6 +5,7 @@ import (
 )
 
 type Executor interface {
+	PrintableDescription() string
 	NewResultSet() interface{}
 	RunPart([]LineItemRow, interface {})
 	AccumulateResultSet(interface {}, interface {})

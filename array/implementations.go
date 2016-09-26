@@ -12,6 +12,9 @@ type Q1HashAgg8 struct {
 func NewExecutor8() *Q1HashAgg8 {
 	return new(Q1HashAgg8)
 }
+func (e Q1HashAgg8) PrintableDescription() string {
+	return "An array aggregator with a max of 256 unique values"
+}
 func (e Q1HashAgg8) NewResultSet() interface{} {
 	rs := NewResultSet(256)
 	return reflect.ValueOf(rs).Interface()
@@ -34,6 +37,9 @@ type Q1HashAgg16 struct {
 }
 func NewExecutor16() *Q1HashAgg16 {
 	return new(Q1HashAgg16)
+}
+func (e Q1HashAgg16) PrintableDescription() string {
+	return "An array aggregator with a max of 65536 unique values"
 }
 func (e Q1HashAgg16) NewResultSet() interface{} {
 	rs := NewResultSet(65536)

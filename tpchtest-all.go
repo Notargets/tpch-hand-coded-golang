@@ -8,10 +8,10 @@ import (
 	"time"
 	"unsafe"
 	"github.com/tpch-hand-coded-golang/array"
-	"github.com/tpch-hand-coded-golang/indirectedarray"
 	"github.com/tpch-hand-coded-golang/hashing"
 	. "github.com/tpch-hand-coded-golang/reader"
 	"github.com/tpch-hand-coded-golang/executor"
+	"github.com/tpch-hand-coded-golang/indirectedarray"
 )
 
 var maxProcs, forceProcs int
@@ -22,7 +22,7 @@ var RunSetup struct {
 func init() {
 	flag.IntVar(&maxProcs, "maxProcs", 1024, "Maximum number of parallel processes to launch")
 	flag.IntVar(&forceProcs, "forceProcs", 0, "Required number of parallel processes to launch")
-	flag.BoolVar(&RunSetup.Run8bit,"Run8bit", true, "Run 8 bit precision array test")
+	flag.BoolVar(&RunSetup.Run8bit,"Run8bit", false, "Run 8 bit precision array test")
 	flag.BoolVar(&RunSetup.Run16bit,"Run16bit", false, "Run 16 bit precision array test")
 	flag.BoolVar(&RunSetup.RunHashagg, "RunHashAgg", false, "Run HashAgg test")
 	flag.BoolVar(&RunSetup.RunIndirect, "RunIndirect", false, "Run Indirect for array tests")
@@ -87,11 +87,21 @@ func main() {
 	 	- The second slice level is the result column number
 	*/
 
-	RunQuery(array.NewExecutor8())
-	RunQuery(array.NewExecutor16())
-	RunQuery(indirectedarray.NewExecutor8())
-	RunQuery(indirectedarray.NewExecutor16())
-	RunQuery(hashing.NewExecutor())
+	if RunSetup.Run8bit {
+		RunQuery(array.NewExecutor8())
+		if RunSetup.RunIndirect {
+			RunQuery(indirectedarray.NewExecutor8())
+		}
+	}
+	if RunSetup.Run16bit {
+		RunQuery(array.NewExecutor16())
+		if RunSetup.RunIndirect {
+			RunQuery(indirectedarray.NewExecutor16())
+		}
+	}
+	if RunSetup.RunHashagg {
+		RunQuery(hashing.NewExecutor())
+	}
 }
 
 func RunQuery(executor executor.Executor)	{
@@ -108,7 +118,6 @@ func RunQuery(executor executor.Executor)	{
 	/*
 	Startup the read thread - reads data in the background
 	 */
-	//chunkChannel := make(chan Chunk, 100*(numGoRoutines+1))
 	chunkChannel := make(chan DataChunk, 10*(numGoRoutines+1))
 	// Spin up the async reader
 	go ParallelReader("lineitem.bin", chunkChannel)
@@ -157,8 +166,10 @@ func MaxParallelism(limiter int) (nLimit int) {
 
 
 func ProcessByStrips(ex executor.Executor, resultChan chan interface{}, chunkChannel chan DataChunk, wg *sync.WaitGroup) {
+	/*
 	var rowCount int
 	var ioTime, calcTime float64
+	*/
 	defer func() {
 		wg.Done()
 //		fmt.Printf("Row Count = %d, IOtime = %5.3fs, CalcTime = %5.3fs\n", rowCount, ioTime, calcTime)
@@ -167,9 +178,13 @@ func ProcessByStrips(ex executor.Executor, resultChan chan interface{}, chunkCha
 	fr := ex.NewResultSet()
 	Q1HashAgg := ex.RunPart
 
-	readLineItemData := func(chunk DataChunk) (li []LineItemRow, liv []LineItemRowVariable) {
-		lineitem1GBAligned := make([]LineItemRow, chunk.Nrows)
-		lineitem1GBVariable := make([]LineItemRowVariable, chunk.Nrows)
+	var lineitem1GBAligned []LineItemRow
+	var lineitem1GBVariable []LineItemRowVariable
+	readLineItemData := func(chunk DataChunk) (li []LineItemRow, liv []LineItemRowVariable, nRows int) {
+		if len(lineitem1GBAligned) < chunk.Nrows {
+			lineitem1GBAligned = make([]LineItemRow, chunk.Nrows)
+			lineitem1GBVariable = make([]LineItemRowVariable, chunk.Nrows)
+		}
 		castToRow := func(b []byte) *LineItemRow {
 			return (*LineItemRow)(unsafe.Pointer(&b[0]))
 		}
@@ -201,22 +216,28 @@ func ProcessByStrips(ex executor.Executor, resultChan chan interface{}, chunkCha
 			liv.L_comment.SetData(chunk.Data[cursor : cursor+strlen])
 			cursor += strlen
 		}
-		return lineitem1GBAligned, lineitem1GBVariable
+		return lineitem1GBAligned, lineitem1GBVariable, chunk.Nrows
 	}
 
 	for {
+		/*
 		startTime := time.Now()
+		*/
 		chunk, open := <-chunkChannel
 		if !open {
 			break
 		}
-		li, _ := readLineItemData(chunk)
+		li, _, nRows := readLineItemData(chunk)
+		/*
 		ioTimePartial := time.Since(startTime)
 		rowCount += len(li)
-		Q1HashAgg(li, fr)
+		*/
+		Q1HashAgg(li, fr, nRows)
+		/*
 		calcTimePartial := time.Since(startTime.Add(ioTimePartial))
 		calcTime += calcTimePartial.Seconds()
 		ioTime += ioTimePartial.Seconds()
+		*/
 	}
 
 	resultChan <- fr

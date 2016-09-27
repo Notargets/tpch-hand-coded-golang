@@ -19,8 +19,8 @@ func (e Q1HashAgg) NewResultSet() interface{} {
 	rs := NewResultSet()
 	return reflect.ValueOf(rs).Interface()
 }
-func (e Q1HashAgg) RunPart (rowData []LineItemRow, i_fr interface{}) {
-	RunPart(rowData, i_fr)
+func (e Q1HashAgg) RunPart (rowData []LineItemRow, i_fr interface{}, nRows int) {
+	RunPart(rowData, i_fr, nRows)
 }
 func (e Q1HashAgg) AccumulateResultSet(i_partialResult interface{}, i_fr interface{}) {
 	AccumulateResultSet(i_partialResult, i_fr)

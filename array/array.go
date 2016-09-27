@@ -76,9 +76,12 @@ func NewResultSet(buckets int) *ResultSet {
 	return rs
 }
 
-func RunPart (rowData []LineItemRow, i_fr interface{}) {
+func RunPart (rowData []LineItemRow, i_fr interface{}, nRows int) {
+//func RunPart (rowData []LineItemRow, i_fr interface{}) {
 	fr := i_fr.(*ResultSet)
-	for _, row := range rowData {
+	for i:=0; i<nRows; i++ {
+		row := rowData[i]
+//	for _, row := range rowData {
 		if row.L_shipdate <= DatePredicate {
 			res1 := row.L_returnflag
 			res2 := row.L_linestatus

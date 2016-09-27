@@ -7,7 +7,7 @@ import (
 type Executor interface {
 	PrintableDescription() string
 	NewResultSet() interface{}
-	RunPart([]LineItemRow, interface {})
+	RunPart([]LineItemRow, interface {}, int)
 	AccumulateResultSet(interface {}, interface {})
 	FinalizeResultSet(interface {})
 	PrintResultSet(interface {})

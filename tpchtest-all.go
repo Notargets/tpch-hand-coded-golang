@@ -166,13 +166,11 @@ func MaxParallelism(limiter int) (nLimit int) {
 
 
 func ProcessByStrips(ex executor.Executor, resultChan chan interface{}, chunkChannel chan DataChunk, wg *sync.WaitGroup) {
-	/*
 	var rowCount int
 	var ioTime, calcTime float64
-	*/
 	defer func() {
 		wg.Done()
-//		fmt.Printf("Row Count = %d, IOtime = %5.3fs, CalcTime = %5.3fs\n", rowCount, ioTime, calcTime)
+		fmt.Printf("Row Count = %d, IOtime = %5.3fs, CalcTime = %5.3fs\n", rowCount, ioTime, calcTime)
 	}()
 
 	fr := ex.NewResultSet()
@@ -220,24 +218,18 @@ func ProcessByStrips(ex executor.Executor, resultChan chan interface{}, chunkCha
 	}
 
 	for {
-		/*
 		startTime := time.Now()
-		*/
 		chunk, open := <-chunkChannel
 		if !open {
 			break
 		}
 		li, _, nRows := readLineItemData(chunk)
-		/*
 		ioTimePartial := time.Since(startTime)
-		rowCount += len(li)
-		*/
+		rowCount += nRows
 		Q1HashAgg(li, fr, nRows)
-		/*
 		calcTimePartial := time.Since(startTime.Add(ioTimePartial))
 		calcTime += calcTimePartial.Seconds()
 		ioTime += ioTimePartial.Seconds()
-		*/
 	}
 
 	resultChan <- fr

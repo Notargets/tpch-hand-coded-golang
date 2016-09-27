@@ -62,6 +62,7 @@ type ResultSet struct {
 	 middle: number of potential key values in group, i.e. 256 for 8-bit cardinality
 	 last: aggregates
 	  */
+	// TODO: make this a single level hash table using a compound 16-bit key (concat the two 8-bits together)
 	Data doubleHashMap
 }
 

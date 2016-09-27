@@ -8,9 +8,10 @@ import (
 	"time"
 	"unsafe"
 	"github.com/tpch-hand-coded-golang/array"
+	"github.com/tpch-hand-coded-golang/indirectedarray"
+	"github.com/tpch-hand-coded-golang/hashing"
 	. "github.com/tpch-hand-coded-golang/reader"
 	"github.com/tpch-hand-coded-golang/executor"
-	"github.com/tpch-hand-coded-golang/hashing"
 )
 
 var maxProcs, forceProcs int
@@ -88,6 +89,8 @@ func main() {
 
 	RunQuery(array.NewExecutor8())
 	RunQuery(array.NewExecutor16())
+	RunQuery(indirectedarray.NewExecutor8())
+	RunQuery(indirectedarray.NewExecutor16())
 	RunQuery(hashing.NewExecutor())
 }
 
@@ -116,7 +119,7 @@ func RunQuery(executor executor.Executor)	{
 	wg := new(sync.WaitGroup)
 	resultChannel := make(chan interface{}, numGoRoutines+1)
 	for threadID := 0; threadID < numGoRoutines; threadID++ {
-		fmt.Printf("Starting thread# %d\n", threadID)
+//		fmt.Printf("Starting thread# %d\n", threadID)
 		wg.Add(1)
 		go ProcessByStrips(executor, resultChannel, chunkChannel, wg)
 	}
@@ -158,7 +161,7 @@ func ProcessByStrips(ex executor.Executor, resultChan chan interface{}, chunkCha
 	var ioTime, calcTime float64
 	defer func() {
 		wg.Done()
-		fmt.Printf("Row Count = %d, IOtime = %5.3fs, CalcTime = %5.3fs\n", rowCount, ioTime, calcTime)
+//		fmt.Printf("Row Count = %d, IOtime = %5.3fs, CalcTime = %5.3fs\n", rowCount, ioTime, calcTime)
 	}()
 
 	fr := ex.NewResultSet()

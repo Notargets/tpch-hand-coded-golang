@@ -1,4 +1,4 @@
-package hashing
+package indirectedarray
 
 import (
 	"fmt"
@@ -9,16 +9,16 @@ func AccumulateResultSet(i_partialResult interface{}, i_fr interface{}) {
 	partialResult := i_partialResult.(*ResultSet)
 	fr := i_fr.(*ResultSet)
 	for i, Map := range partialResult.Data {
-		for res, val := range Map {
-			if val != nil {
-				if fr.Data[i][res] == nil {
-					fr.Data[i][res] = make([]float64, 10)
-				}
-				fr.Data[i][res][0] = val[0]
-				fr.Data[i][res][1] = val[1]
-				for ii := 2; ii < 10; ii++ {
-					fr.Data[i][res][ii] += val[ii]
-				}
+		for _, key := range partialResult.Keymap[i] {
+			if fr.Data[i][key] == nil {
+				fr.Data[i][key] = make([]float64, 10)
+				//				fmt.Printf("New key[%d] = %d\n",ii,key)
+				fr.Keymap[i] = append(fr.Keymap[i], key)
+			}
+			fr.Data[i][key][0] = Map[key][0]
+			fr.Data[i][key][1] = Map[key][1]
+			for ii := 2; ii < 10; ii++ {
+				fr.Data[i][key][ii] += Map[key][ii]
 			}
 		}
 	}
@@ -26,12 +26,10 @@ func AccumulateResultSet(i_partialResult interface{}, i_fr interface{}) {
 
 func FinalizeResultSet(i_partialResult interface{}) {
 	partialResult := i_partialResult.(*ResultSet)
-	for _, Map := range partialResult.Data {
-		for _, val := range Map {
-			if val != nil {
-				for ii := 6; ii < 9; ii++ {
-					val[ii] /= val[9]
-				}
+	for i, Map := range partialResult.Data {
+		for _, key := range partialResult.Keymap[i] {
+			for ii := 6; ii < 9; ii++ {
+				Map[key][ii] /= Map[key][9]
 			}
 		}
 	}
@@ -39,22 +37,20 @@ func FinalizeResultSet(i_partialResult interface{}) {
 
 func PrintResultSet(i_fr interface{}) {
 	fr := i_fr.(*ResultSet)
-	for _, Map := range fr.Data {
-		for _, val := range Map {
-			if val != nil {
-				for i := 0; i < 2; i++ {
-					fmt.Printf("%c ", byte(val[i]))
-				}
-				fmt.Printf("%10d ", int(val[2]))
-				for i := 3; i < 6; i++ {
-					fmt.Printf("%15.2f ", val[i])
-				}
-				for i := 6; i < 9; i++ {
-					fmt.Printf("%7.2f ", val[i])
-				}
-				fmt.Printf("%10d ", int(val[9]))
-				fmt.Printf("\n")
+	for i, Map := range fr.Data {
+		for _, key := range fr.Keymap[i] {
+			for ii := 0; ii < 2; ii++ {
+				fmt.Printf("%c ", byte(Map[key][ii]))
 			}
+			fmt.Printf("%10d ", int(Map[key][2]))
+			for ii := 3; ii < 6; ii++ {
+				fmt.Printf("%15.2f ", Map[key][ii])
+			}
+			for ii := 6; ii < 9; ii++ {
+				fmt.Printf("%7.2f ", Map[key][ii])
+			}
+			fmt.Printf("%10d ", int(Map[key][9]))
+			fmt.Printf("\n")
 		}
 	}
 }
@@ -65,15 +61,19 @@ type ResultSet struct {
 	 middle: number of potential key values in group, i.e. 256 for 8-bit cardinality
 	 last: aggregates
 	  */
-	//Data   [][][]float64
-	Data   []map[byte][]float64
+	Data   [][][]float64
+	/*
+	array of key values found, one for each group
+	 */
+	Keymap [][]int
 }
 
-func NewResultSet() *ResultSet {
+func NewResultSet(buckets int) *ResultSet {
 	rs := new(ResultSet)
-	rs.Data = make([]map[byte][]float64, 2)
-	rs.Data[0] = make(map[byte][]float64, 256)
-	rs.Data[1] = make(map[byte][]float64, 256)
+	rs.Data = make([][][]float64,2)
+	rs.Data[0] = make([][]float64, buckets)
+	rs.Data[1] = make([][]float64, buckets)
+	rs.Keymap = make([][]int,2)
 	return rs
 }
 
@@ -85,9 +85,11 @@ func RunPart (rowData []LineItemRow, i_fr interface{}) {
 			res2 := row.L_linestatus
 			if fr.Data[0][res1] == nil {
 				fr.Data[0][res1] = make([]float64, 10)
+				fr.Keymap[0] = append(fr.Keymap[0], int(res1))
 			}
 			if fr.Data[1][res2] == nil {
 				fr.Data[1][res2] = make([]float64, 10)
+				fr.Keymap[1] = append(fr.Keymap[1], int(res2))
 			}
 			fr.Data[0][res1][0] = float64(res1)
 			fr.Data[0][res1][1] = float64(res2)

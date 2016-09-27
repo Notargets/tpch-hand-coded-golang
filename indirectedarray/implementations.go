@@ -1,4 +1,4 @@
-package array
+package indirectedarray
 
 import (
 	"reflect"
@@ -6,7 +6,7 @@ import (
 	. "github.com/tpch-hand-coded-golang/reader"
 )
 
-const baseDescription = "An array based aggregator with a max of "
+const baseDescription = "An indirected array based aggregator with a max of "
 
 type Q1HashAgg8 struct {
 	executor.Executor

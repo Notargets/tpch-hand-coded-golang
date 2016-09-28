@@ -1,7 +1,7 @@
 # tpch-hand-coded-golang
 ### Highest Performance execution of TPCH type queries
 
-![Scaling Performance Result](https://github.com/llonergan/tpch-hand-coded-golang/images/scaling-tpchq1-golang.PNG)
+![Scaling Performance Result](https://github.com/llonergan/tpch-hand-coded-golang/blob/master/images/scaling-tpchq1-golang.PNG)
 
 This is a testing ground for high performance execution ideas. The language is "go" and assumes go version 1.6 or better.
 

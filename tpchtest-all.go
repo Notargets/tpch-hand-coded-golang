@@ -12,6 +12,7 @@ import (
 	. "github.com/tpch-hand-coded-golang/reader"
 	"github.com/tpch-hand-coded-golang/executor"
 	"github.com/tpch-hand-coded-golang/indirectedarray"
+	"os"
 )
 
 var maxProcs, forceProcs int
@@ -31,8 +32,6 @@ func init() {
 	flag.Parse()
 	if forceProcs != 0 {
 		fmt.Printf("Forced number of processes set to: %d\n", forceProcs)
-	} else {
-		fmt.Printf("Maximum number of processes set to: %d\n", maxProcs)
 	}
 	parsed, _ := time.Parse("2006-01-02", "1998-12-01")
 	DatePredicate = parsed.AddDate(0, 0, -115).Unix()
@@ -41,60 +40,15 @@ func init() {
 		RunSetup.RunArray = true
 		RunSetup.RunIndirect = true
 		RunSetup.RunHashagg = true
+	} else {
+		if ! RunSetup.RunIndirect && ! RunSetup.RunHashagg && ! RunSetup.RunArray {
+			fmt.Println("Must specify one run option - try \"-RunArray\"")
+			os.Exit(0)
+		}
 	}
 }
 
-// From the DDL in the TPC-H benchmark directory:
-/*
-CREATE TABLE LINEITEM ( L_ORDERKEY    INTEGER NOT NULL,
-                             L_PARTKEY     INTEGER NOT NULL,
-                             L_SUPPKEY     INTEGER NOT NULL,
-                             L_LINENUMBER  INTEGER NOT NULL,
-                             L_QUANTITY    FLOAT8 NOT NULL,
-                             L_EXTENDEDPRICE  FLOAT8 NOT NULL,
-                             L_DISCOUNT    FLOAT8 NOT NULL,
-                             L_TAX         FLOAT8 NOT NULL,
-                             L_RETURNFLAG  CHAR(1) NOT NULL,
-                             L_LINESTATUS  CHAR(1) NOT NULL,
-                             L_SHIPDATE    DATE NOT NULL,
-                             L_COMMITDATE  DATE NOT NULL,
-                             L_RECEIPTDATE DATE NOT NULL,
-                             L_SHIPINSTRUCT TEXT NOT NULL,  -- R
-                             L_SHIPMODE     TEXT NOT NULL,  -- R
-                             L_COMMENT      TEXT NOT NULL) WITH (appendonly=true,orientation=column);
-
-*/
-
 func main() {
-	/*
-	   select
-	   	L_returnflag,
-	   	L_linestatus,
-	   	sum(L_quantity) as sum_qty,
-	   	sum(L_extendedprice) as sum_base_price,
-	   	sum(L_extendedprice * (1 - L_discount)) as sum_disc_price,
-	   	sum(L_extendedprice * (1 - L_discount) * (1 + L_tax)) as sum_charge,
-	   	avg(L_quantity) as avg_qty,
-	   	avg(L_extendedprice) as avg_price,
-	   	avg(L_discount) as avg_disc,
-	   	count(*) as count_order
-	   from
-	   	lineitem
-	   where
-	   	L_shipdate <= date '1998-12-01' - interval '115 day'
-	   group by
-	   	L_returnflag,
-	   	L_linestatus
-	   order by
-	   	L_returnflag,
-	   	L_linestatus;
-	*/
-	/*
-	 We need a map of columns and of grouping buckets, because both are simple ordinal sets we'll use slices
-	 	- The first slice level is the grouping bucket
-	 	- The second slice level is the result column number
-	*/
-
 	if RunSetup.RunArray {
 		RunQuery(array.NewExecutor())
 	}
@@ -242,3 +196,48 @@ func ProcessByStrips(ex executor.Executor, resultChan chan interface{}, chunkCha
 
 	resultChan <- fr
 }
+
+/*
+From the DDL in the TPC-H benchmark directory:
+
+CREATE TABLE LINEITEM ( L_ORDERKEY    INTEGER NOT NULL,
+                             L_PARTKEY     INTEGER NOT NULL,
+                             L_SUPPKEY     INTEGER NOT NULL,
+                             L_LINENUMBER  INTEGER NOT NULL,
+                             L_QUANTITY    FLOAT8 NOT NULL,
+                             L_EXTENDEDPRICE  FLOAT8 NOT NULL,
+                             L_DISCOUNT    FLOAT8 NOT NULL,
+                             L_TAX         FLOAT8 NOT NULL,
+                             L_RETURNFLAG  CHAR(1) NOT NULL,
+                             L_LINESTATUS  CHAR(1) NOT NULL,
+                             L_SHIPDATE    DATE NOT NULL,
+                             L_COMMITDATE  DATE NOT NULL,
+                             L_RECEIPTDATE DATE NOT NULL,
+                             L_SHIPINSTRUCT TEXT NOT NULL,  -- R
+                             L_SHIPMODE     TEXT NOT NULL,  -- R
+                             L_COMMENT      TEXT NOT NULL) WITH (appendonly=true,orientation=column);
+
+The Q1 query text:
+
+   select
+	   L_returnflag,
+	   L_linestatus,
+	   sum(L_quantity) as sum_qty,
+	   sum(L_extendedprice) as sum_base_price,
+	   sum(L_extendedprice * (1 - L_discount)) as sum_disc_price,
+	   sum(L_extendedprice * (1 - L_discount) * (1 + L_tax)) as sum_charge,
+	   avg(L_quantity) as avg_qty,
+	   avg(L_extendedprice) as avg_price,
+	   avg(L_discount) as avg_disc,
+	   count(*) as count_order
+   from
+	   lineitem
+   where
+	   L_shipdate <= date '1998-12-01' - interval '115 day'
+   group by
+	   L_returnflag,
+	   L_linestatus
+   order by
+	   L_returnflag,
+	   L_linestatus;
+*/

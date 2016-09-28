@@ -33,6 +33,7 @@ Postgres Result:
 ### Current roadmap:
     - Improve parallel speedup - find current bottleneck
     - Use CGO to implement kernel processing to compare execution speed with golang
+    - Vectorize chunks before execution
 
 ### Usage:
     - First you need to generate and convert a TPC-H lineitem data table. Do this:

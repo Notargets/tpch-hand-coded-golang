@@ -65,6 +65,7 @@ func RunQuery(executor executor.Executor)	{
 	if forceProcs != 0 {
 		numGoRoutines = forceProcs
 	}
+	fmt.Printf("Running with %d threads...\n", numGoRoutines)
 
 	/*
 	---------------------- Begin query processing -------------------------

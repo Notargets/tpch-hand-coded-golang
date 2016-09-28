@@ -1,5 +1,5 @@
 # tpch-hand-coded-golang
-### Highest Performance execution of TPCH type queries
+### Target: Highest Performance execution of TPCH type queries
 
 ![Scaling Performance Result](https://github.com/llonergan/tpch-hand-coded-golang/blob/master/images/scaling-tpchq1-golang.PNG)
 

@@ -16,7 +16,7 @@ import (
 
 var maxProcs, forceProcs int
 var RunSetup struct {
-	RunArray, RunHashagg, RunIndirect bool
+	RunAll, RunArray, RunHashagg, RunIndirect bool
 }
 var workerStats bool
 
@@ -27,6 +27,7 @@ func init() {
 	flag.BoolVar(&RunSetup.RunArray,"RunArray", false, "Run 16 bit precision array test")
 	flag.BoolVar(&RunSetup.RunHashagg, "RunHashAgg", false, "Run HashAgg test")
 	flag.BoolVar(&RunSetup.RunIndirect, "RunIndirect", false, "Run Indirect for array tests")
+	flag.BoolVar(&RunSetup.RunAll, "RunAll", false, "Run all available tests")
 	flag.Parse()
 	if forceProcs != 0 {
 		fmt.Printf("Forced number of processes set to: %d\n", forceProcs)
@@ -35,6 +36,12 @@ func init() {
 	}
 	parsed, _ := time.Parse("2006-01-02", "1998-12-01")
 	DatePredicate = parsed.AddDate(0, 0, -115).Unix()
+
+	if RunSetup.RunAll {
+		RunSetup.RunArray = true
+		RunSetup.RunIndirect = true
+		RunSetup.RunHashagg = true
+	}
 }
 
 // From the DDL in the TPC-H benchmark directory:
@@ -113,7 +120,7 @@ func RunQuery(executor executor.Executor)	{
 	/*
 	Startup the read thread - reads data in the background
 	 */
-	chunkChannel := make(chan DataChunk, 10*(numGoRoutines+1))
+	chunkChannel := make(chan DataChunk, numGoRoutines)
 	// Spin up the async reader
 	go ParallelReader("lineitem.bin", chunkChannel)
 

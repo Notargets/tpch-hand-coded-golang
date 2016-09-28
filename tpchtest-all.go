@@ -120,7 +120,11 @@ func RunQuery(executor executor.Executor)	{
 	/*
 	Startup the read thread - reads data in the background
 	 */
-	chunkChannel := make(chan DataChunk, numGoRoutines)
+	maxThreads := numGoRoutines
+	if maxThreads < 12 {
+		maxThreads = 12
+	}
+	chunkChannel := make(chan DataChunk, maxThreads)
 	// Spin up the async reader
 	go ParallelReader("lineitem.bin", chunkChannel)
 

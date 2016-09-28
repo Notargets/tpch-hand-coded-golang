@@ -2,9 +2,8 @@
 
 EXE=tpchtest-all
 
-if [ ! -x $EXE ]; then
-    go build $EXE.go
-fi
+rm $EXE
+go build $EXE.go
 
 for procs in 1 2 4 6 8 10
 do

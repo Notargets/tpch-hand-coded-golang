@@ -16,14 +16,15 @@ import (
 
 var maxProcs, forceProcs int
 var RunSetup struct {
-	Run8bit, Run16bit, RunHashagg, RunIndirect bool
+	RunArray, RunHashagg, RunIndirect bool
 }
+var workerStats bool
 
 func init() {
 	flag.IntVar(&maxProcs, "maxProcs", 1024, "Maximum number of parallel processes to launch")
 	flag.IntVar(&forceProcs, "forceProcs", 0, "Required number of parallel processes to launch")
-	flag.BoolVar(&RunSetup.Run8bit,"Run8bit", false, "Run 8 bit precision array test")
-	flag.BoolVar(&RunSetup.Run16bit,"Run16bit", false, "Run 16 bit precision array test")
+	flag.BoolVar(&workerStats,"workerStats", false, "Print out stats for each worker")
+	flag.BoolVar(&RunSetup.RunArray,"RunArray", false, "Run 16 bit precision array test")
 	flag.BoolVar(&RunSetup.RunHashagg, "RunHashAgg", false, "Run HashAgg test")
 	flag.BoolVar(&RunSetup.RunIndirect, "RunIndirect", false, "Run Indirect for array tests")
 	flag.Parse()
@@ -87,17 +88,11 @@ func main() {
 	 	- The second slice level is the result column number
 	*/
 
-	if RunSetup.Run8bit {
-		RunQuery(array.NewExecutor8())
-		if RunSetup.RunIndirect {
-			RunQuery(indirectedarray.NewExecutor8())
-		}
+	if RunSetup.RunArray {
+		RunQuery(array.NewExecutor())
 	}
-	if RunSetup.Run16bit {
-		RunQuery(array.NewExecutor16())
-		if RunSetup.RunIndirect {
-			RunQuery(indirectedarray.NewExecutor16())
-		}
+	if RunSetup.RunIndirect {
+		RunQuery(indirectedarray.NewExecutor())
 	}
 	if RunSetup.RunHashagg {
 		RunQuery(hashing.NewExecutor())
@@ -170,7 +165,9 @@ func ProcessByStrips(ex executor.Executor, resultChan chan interface{}, chunkCha
 	var ioTime, calcTime float64
 	defer func() {
 		wg.Done()
-		fmt.Printf("Row Count = %d, IOtime = %5.3fs, CalcTime = %5.3fs\n", rowCount, ioTime, calcTime)
+		if workerStats {
+			fmt.Printf("Row Count = %d, IOtime = %5.3fs, CalcTime = %5.3fs\n", rowCount, ioTime, calcTime)
+		}
 	}()
 
 	fr := ex.NewResultSet()

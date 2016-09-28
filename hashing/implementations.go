@@ -13,7 +13,7 @@ func NewExecutor() *Q1HashAgg {
 	return new(Q1HashAgg)
 }
 func (e Q1HashAgg) PrintableDescription() string {
-	return "A hashing aggregator with a max of 256 unique values"
+	return "A hashing aggregator with a max of 256 unique values per grouping attribute"
 }
 func (e Q1HashAgg) NewResultSet() interface{} {
 	rs := NewResultSet()

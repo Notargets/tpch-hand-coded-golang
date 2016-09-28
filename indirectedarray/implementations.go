@@ -15,7 +15,7 @@ func NewExecutor() *Q1HashAgg {
 	return new(Q1HashAgg)
 }
 func (e Q1HashAgg) PrintableDescription() string {
-	return baseDescription + "65536 unique values"
+	return baseDescription + "256 unique values per grouping attribute"
 }
 func (e Q1HashAgg) NewResultSet() interface{} {
 	rs := NewResultSet(65536)

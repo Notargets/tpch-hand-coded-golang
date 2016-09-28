@@ -7,12 +7,11 @@ This is a testing ground for high performance execution ideas. The language is "
 
 ### Current status:
     - Initial implementation in pure golang for TPC-H query 1
-    - Achieves approximately 200x speedup over Postgres V9 for 1GB of TPC-H data
     - Parallelized using Golang goroutines
 
 ### Current roadmap:
-    - Improve parallel speedup - find current threading bottleneck
-    - Implement GPU based processing for the kernel using CGO and cuda
+    - Improve parallel speedup - find current bottleneck
+    - Use CGO to implement kernel processing to compare execution speed with golang
 
 ### Usage:
     - First you need to generate and convert a TPC-H lineitem data table. Do this:
@@ -22,7 +21,7 @@ This is a testing ground for high performance execution ideas. The language is "
         cd ..
 
     - Now you can run the tpchq1 test:
-        go run tpchtest.go -maxProcs 4
+        go run tpchtest-all.go -RunAll -maxProcs 10
 
 **Note** the code limits the number of goroutines to the number of CPU cores you have on your machine.
 

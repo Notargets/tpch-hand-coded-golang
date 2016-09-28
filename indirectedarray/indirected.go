@@ -3,7 +3,13 @@ package indirectedarray
 import (
 	"fmt"
 	. "github.com/tpch-hand-coded-golang/reader"
+	"sort"
 )
+
+type KeyMap []int16
+func (km KeyMap) Len() int { return len(km) }
+func (km KeyMap) Swap(i, j int) { km[i], km[j] = km[j], km[i] }
+func (km KeyMap) Less(i, j int) bool { return km[i] < km[j] }
 
 func AccumulateResultSet(i_partialResult interface{}, i_fr interface{}) {
 	partialResult := i_partialResult.(*ResultSet)
@@ -31,6 +37,7 @@ func FinalizeResultSet(i_partialResult interface{}) {
 
 func PrintResultSet(i_fr interface{}) {
 	fr := i_fr.(*ResultSet)
+	sort.Sort(fr.Keymap)
 	for _, key  := range fr.Keymap {
 		aggs := fr.Data[key]
 		res1 := key>>8
@@ -59,7 +66,7 @@ type ResultSet struct {
 	/*
 	array of key values found, one for each group
 	 */
-	Keymap []int16
+	Keymap KeyMap
 }
 
 func NewResultSet(buckets int) *ResultSet {

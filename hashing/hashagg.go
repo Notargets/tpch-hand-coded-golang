@@ -3,7 +3,13 @@ package hashing
 import (
 	"fmt"
 	. "github.com/tpch-hand-coded-golang/reader"
+	"sort"
 )
+
+type KeyMap []int16
+func (km KeyMap) Len() int { return len(km) }
+func (km KeyMap) Swap(i, j int) { km[i], km[j] = km[j], km[i] }
+func (km KeyMap) Less(i, j int) bool { return km[i] < km[j] }
 
 func AccumulateResultSet(i_partialResult interface{}, i_fr interface{}) {
 	partialResult := i_partialResult.(*ResultSet)
@@ -29,7 +35,13 @@ func FinalizeResultSet(i_partialResult interface{}) {
 
 func PrintResultSet(i_fr interface{}) {
 	fr := i_fr.(*ResultSet)
-	for key, aggs := range fr.Data {
+	km := make(KeyMap, 0)
+	for key := range fr.Data {
+		km = append(km, key)
+	}
+	sort.Sort(km)
+	for _, key := range km {
+		aggs := fr.Data[key]
 		res1 := key>>8
 		res2 := (key<<8)>>8
 		fmt.Printf("%c ", byte(res1))

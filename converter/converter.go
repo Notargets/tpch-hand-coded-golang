@@ -10,26 +10,6 @@ import (
 	"unsafe"
 )
 
-// From the DDL in the TPC-H benchmark directory:
-/*
-CREATE TABLE LINEITEM ( L_ORDERKEY    INTEGER NOT NULL,
-                             L_PARTKEY     INTEGER NOT NULL,
-                             L_SUPPKEY     INTEGER NOT NULL,
-                             L_LINENUMBER  INTEGER NOT NULL,
-                             L_QUANTITY    FLOAT8 NOT NULL,
-                             L_EXTENDEDPRICE  FLOAT8 NOT NULL,
-                             L_DISCOUNT    FLOAT8 NOT NULL,
-                             L_TAX         FLOAT8 NOT NULL,
-                             L_RETURNFLAG  CHAR(1) NOT NULL,
-                             L_LINESTATUS  CHAR(1) NOT NULL,
-                             L_SHIPDATE    DATE NOT NULL,
-                             L_COMMITDATE  DATE NOT NULL,
-                             L_RECEIPTDATE DATE NOT NULL,
-                             L_SHIPINSTRUCT TEXT NOT NULL,  -- R
-                             L_SHIPMODE     TEXT NOT NULL,  -- R
-                             L_COMMENT      TEXT NOT NULL) WITH (appendonly=true,orientation=column);
-
-*/
 type LineItemRow struct {
 	L_orderkey, L_partkey, L_suppkey, L_linenumber int64
 	L_quantity, L_extendedprice, L_discount, L_tax float64
@@ -137,14 +117,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// We write 1000 rows at a time to allow for parallel IO on consumption
-	chunkSize := 1000
+	// We write chunkSize rows at a time to allow for parallel IO on consumption
+	chunkSize := 150000
 	buffer := []byte{}
 	var rowCount int64
 	for i, row := range lineitem1GB {
 		buffer, _ = Serialize(buffer, row)
 		rowCount++
 		if (i+1)%chunkSize == 0 || (i+1) == len(lineitem1GB) {
+//			fmt.Println("Rowcount = ", rowCount, " Bufferlen = ", len(buffer))
 			metaBuffer, _ := Serialize([]byte{}, rowCount)
 			metaBuffer, _ = Serialize(metaBuffer, int64(len(buffer)))
 			outputFile.Write(metaBuffer)

@@ -47,3 +47,5 @@ Postgres Result:
 
 **Note** the code limits the number of goroutines to the number of CPU cores you have on your machine.
 
+
+<img src="https://github.com/llonergan/tpch-hand-coded-golang/blob/master/images/code-intellij.PNG" width="48">
